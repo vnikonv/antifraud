@@ -18,11 +18,14 @@ st.set_page_config(page_title='Antifraud AI', page_icon=':mag:', layout='wide')
 
 st.markdown("""
 <style>
-[data-testid="stSidebar"] {
+/* Общий стиль сайдбара */
+section[data-testid="stSidebar"] {
     background-color: #00B2CA !important;
     color: white !important;
     padding-top: 10px !important;
 }
+
+/* Надписи и тексты в сайдбаре */
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] div,
 section[data-testid="stSidebar"] span {
@@ -31,12 +34,76 @@ section[data-testid="stSidebar"] span {
     font-size: 16px !important;
     border-radius: 12px !important;
 }
+
+/* Селектбокс и поля ввода */
+section[data-testid="stSidebar"] div[role="combobox"],
+section[data-testid="stSidebar"] input,
+section[data-testid="stSidebar"] select {
+    background-color: #000000 !important;
+    border: none !important;
+    border-radius: 8px !important;
+    color: white !important;
+    box-shadow: none !important;
+}
+
+/* SVG иконки в сайдбаре */
+section[data-testid="stSidebar"] svg {
+    color: white !important;
+}
+
+/* Выпадающие списки и опции */
+ul[role="listbox"],
+li[role="option"] {
+    background-color: #000000 !important;
+    color: white !important;
+    border-radius: 8px !important;
+    border: none !important;
+}
+
+li[role="option"]:hover,
+li[aria-selected="true"] {
+    background-color: #000000 !important;
+}
+
+/* Устранение стандартных границ и теней от BaseWeb */
+[data-baseweb="select"],
+[data-baseweb="select"] * {
+    background-color: #000000 !important;
+    color: white !important;
+    border: none !important;
+    box-shadow: none !important;
+}
+
+img {
+    border-radius: 32px !important;
+}
+
+label div p {
+    font-size: 24px !important;
+    font-weight: 600 !important;
+}
+
+[data-testid="stMainBlockContainer"] {
+    padding-top: 5% !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
-st.title("🤖 Antifraud AI System")
+st.set_page_config(page_title='Antifraud AI', page_icon = "ammit_search.png", layout = 'wide', initial_sidebar_state = 'auto')
 
-page = st.sidebar.selectbox("Выберите страницу:", ["📊 Обучение модели", "🔍 Предсказание мошенничества"])
+icon = "nku_icon.png"
+
+left_co, cent_co, last_co = st.columns([0.35, 0.3, 0.35])
+with cent_co:
+    st.image("ammit.png")
+col1, col2 = st.columns([0.1, 0.9])
+with col1:
+    st.image(icon, width=100)
+with col2:
+    st.title("Антифрод ML")
+
+page = st.sidebar.selectbox("Выберите страницу:", ["🏋️‍♂️ Обучение модели", "🔍 Проверка"])
 
 def align_features(df, feature_names):
     for col in feature_names:
@@ -44,6 +111,7 @@ def align_features(df, feature_names):
             df[col] = 0
     return df[feature_names]
 
+# Classifier models selection
 models = {
     "RandomForest": RandomForestClassifier(n_estimators=100, class_weight="balanced", random_state=42),
     "GradientBoosting": GradientBoostingClassifier(n_estimators=250, learning_rate=0.1, max_depth=6, random_state=42),
@@ -52,25 +120,41 @@ models = {
     "XGBoost": XGBClassifier(use_label_encoder=False, eval_metric="logloss", random_state=42)
 }
 
-if page == "📊 Обучение модели":
+if page == "🏋️‍♂️ Обучение модели":
     st.header("Обучение модели")
     uploaded_file = st.file_uploader("Загрузите CSV с колонкой 'IsFraud'", type=["csv"])
+    use_default = st.checkbox("Или используйте стандартный датасет")
+
+    if use_default:
+        uploaded_file = "./account_data.csv"
+        st.info("✅ Вы используете встроенный пример датасета")
+    
+
     model_name = st.selectbox("Выберите модель:", list(models.keys()))
 
     if uploaded_file:
+        # Loading data
         df = pd.read_csv(uploaded_file)
         st.dataframe(df.head())
 
         if st.button("🚀 Обучить модель"):
+            # GB Flag = "IsFraud" column, binary classification task
             y = df["IsFraud"].map({"Yes": 1, "No": 0})
             X = df.drop(columns=["IsFraud"])
+
+            # Detect categorical columns and encode them using LabelEncoder as str
             for col in X.select_dtypes(include="object").columns:
                 le = LabelEncoder()
                 X[col] = le.fit_transform(X[col].astype(str))
+
+            # Balancing samples using RandomUnderSampler
             rus = RandomUnderSampler(random_state=42)
             X_res, y_res = rus.fit_resample(X, y)
+
+            # Train/test split
             X_train, X_test, y_train, y_test = train_test_split(X_res, y_res, test_size=0.2, stratify=y_res, random_state=42)
 
+            # Feature scaling
             scaler = StandardScaler()
             X_train = scaler.fit_transform(X_train)
             X_test = scaler.transform(X_test)
@@ -185,15 +269,21 @@ if page == "📊 Обучение модели":
 
             st.success(f"✅ {model_name} модель сохранена")
 
+            st.session_state["model_name"] = model_name
             st.session_state["model"] = model
             st.session_state["scaler"] = scaler
             st.session_state["features"] = X.columns.tolist()
 
-if page == "🔍 Предсказание мошенничества":
+if page == "🔍 Проверка":
     if "model" in st.session_state and "scaler" in st.session_state and "features" in st.session_state:
         model = st.session_state["model"]
         scaler = st.session_state["scaler"]
         feature_names = st.session_state["features"]
+
+        model_name = st.session_state.get("model_name", "Неизвестно")
+
+        st.info(f"Сейчас используется модель: **{model_name}**")
+
         uploaded_file = st.file_uploader("Загрузите тестовый файл", type=["csv", "xlsx", "xls"])
 
         if uploaded_file:
@@ -218,17 +308,29 @@ if page == "🔍 Предсказание мошенничества":
             df_scaled = pd.DataFrame(scaler.transform(df_imputed), columns=df_imputed.columns)
 
             predictions = model.predict_proba(df_scaled)[:, 1]
-            df_original["Вероятность мошенничества"] = predictions
-
-            st.subheader("📋 Результаты проверки")
+            is_fraud_pred = model.predict(df_scaled)
+            # Create output DataFrame with only index, Вероятность мошенничества, and IsFraud
+            output_df = pd.DataFrame({
+                "Вероятность мошенничества": predictions,
+                "IsFraud": is_fraud_pred
+            })
+            st.subheader("📋 Предсказания")
             rows_to_display = st.slider(
                 "Количество отображаемых строк",
                 min_value=1,
-                max_value=min(100, len(df_original)),
-                value=min(10, len(df_original)),
+                max_value=min(100, len(output_df)),
+                value=min(10, len(output_df)),
                 step=1
             )
+            st.dataframe(output_df.head(rows_to_display))
+            csv_pred = output_df.to_csv(index=False).encode("utf-8")
+            st.download_button(
+                label="📥 Скачать предсказания",
+                data=csv_pred,
+                file_name="predictions.csv",
+                mime="text/csv"
+            )
 
-            st.dataframe(df_original[selected_features + ["Вероятность мошенничества"]].head(rows_to_display))
+           
     else:
         st.error("❌ Сначала обучите модель")
