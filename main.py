@@ -1,6 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import joblib
+import json
+import os
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder, StandardScaler
 from sklearn.metrics import classification_report, precision_score, recall_score, roc_auc_score, accuracy_score
@@ -14,7 +17,7 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import roc_curve
 import time
 
-st.set_page_config(page_title='Antifraud AI', page_icon=':mag:', layout='wide')
+st.set_page_config(page_title='Antifraud AI', page_icon=':mag:', layout='wide', initial_sidebar_state = 'auto')
 
 st.markdown("""
 <style>
@@ -70,6 +73,7 @@ li[aria-selected="true"] {
 [data-baseweb="select"] * {
     background-color: #000000 !important;
     color: white !important;
+    height: auto !important;
     border: none !important;
     box-shadow: none !important;
 }
@@ -77,6 +81,8 @@ li[aria-selected="true"] {
 img {
     border-radius: 32px !important;
 }
+
+
 
 label div p {
     font-size: 24px !important;
@@ -260,29 +266,66 @@ if page == "🏋️‍♂️ Обучение модели":
             results_df["Истинный IsFraud"] = y_test.values
 
             csv = results_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="📥 Скачать результаты на тестовой выборке (оригинальные значения)",
-                data=csv,
-                file_name="test_predictions.csv",
-                mime="text/csv"
-            )
+            col_csv, col_xls = st.columns(2)
+            with col_csv:
+                st.download_button(
+                    label="📥 Скачать результаты на тестовой выборке в CSV",
+                    data=csv,
+                    file_name="test_predictions.csv",
+                    mime="text/csv"
+                )
+            with col_xls:
+                import io
+                from openpyxl import Workbook
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Test Predictions"
+                for col_num, column in enumerate(results_df.columns, 1):
+                    ws.cell(row=1, column=col_num, value=column)
+                for row_num, row in enumerate(results_df.values, 2):
+                    for col_num, value in enumerate(row, 1):
+                        ws.cell(row=row_num, column=col_num, value=value)
+                excel_buffer = io.BytesIO()
+                wb.save(excel_buffer)
+                excel_buffer.seek(0)
+                st.download_button(
+                    label="📥 Скачать результаты на тестовой выборке в XLS",
+                    data=excel_buffer.getvalue(),
+                    file_name="test_predictions.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
 
             st.success(f"✅ {model_name} модель сохранена")
 
-            st.session_state["model_name"] = model_name
-            st.session_state["model"] = model
-            st.session_state["scaler"] = scaler
-            st.session_state["features"] = X.columns.tolist()
+            os.makedirs("models", exist_ok=True)
+            
+            # Save model
+            joblib.dump(model, f"models/{model_name}_model.pkl")
+
+                # Save scaler
+            joblib.dump(scaler, f"models/{model_name}_scaler.pkl")
+
+            # Save feature names
+            with open(f"models/{model_name}_features.json", "w") as f:
+                json.dump(X.columns.tolist(), f)
 
 if page == "🔍 Проверка":
-    if "model" in st.session_state and "scaler" in st.session_state and "features" in st.session_state:
-        model = st.session_state["model"]
-        scaler = st.session_state["scaler"]
-        feature_names = st.session_state["features"]
+    # Scan all models that have a saved _model.pkl file
+    available_models = [
+    f.replace("_model.pkl", "")
+    for f in os.listdir("models")
+    if f.endswith("_model.pkl")
+    ]
 
-        model_name = st.session_state.get("model_name", "Неизвестно")
+    if available_models:
+        selected_model = st.selectbox("Выберите модель для предсказания:", available_models)
 
-        st.info(f"Сейчас используется модель: **{model_name}**")
+        model = joblib.load(f"models/{selected_model}_model.pkl")
+        scaler = joblib.load(f"models/{selected_model}_scaler.pkl")
+
+        with open(f"models/{selected_model}_features.json", "r") as f:
+
+            feature_names = json.load(f)
 
         uploaded_file = st.file_uploader("Загрузите тестовый файл", type=["csv", "xlsx", "xls"])
 
@@ -323,14 +366,37 @@ if page == "🔍 Проверка":
                 step=1
             )
             st.dataframe(output_df.head(rows_to_display))
-            csv_pred = output_df.to_csv(index=False).encode("utf-8")
-            st.download_button(
-                label="📥 Скачать предсказания",
-                data=csv_pred,
-                file_name="predictions.csv",
-                mime="text/csv"
-            )
-
+            
+            # Two download buttons: CSV and XLS
+            col_csv, col_xls = st.columns(2)
+            with col_csv:
+                csv_pred = output_df.to_csv(index=False).encode("utf-8")
+                st.download_button(
+                    label="📥 Скачать предсказания в CSV",
+                    data=csv_pred,
+                    file_name="predictions.csv",
+                    mime="text/csv"
+                )
+            with col_xls:
+                import io
+                from openpyxl import Workbook
+                wb = Workbook()
+                ws = wb.active
+                ws.title = "Predictions"
+                for col_num, column in enumerate(output_df.columns, 1):
+                    ws.cell(row=1, column=col_num, value=column)
+                for row_num, row in enumerate(output_df.values, 2):
+                    for col_num, value in enumerate(row, 1):
+                        ws.cell(row=row_num, column=col_num, value=value)
+                excel_buffer = io.BytesIO()
+                wb.save(excel_buffer)
+                excel_buffer.seek(0)
+                st.download_button(
+                    label="📥 Скачать предсказания в XLS",
+                    data=excel_buffer.getvalue(),
+                    file_name="predictions.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
            
     else:
         st.error("❌ Сначала обучите модель")
