@@ -141,7 +141,15 @@ if page == "🏋️‍♂️ Обучение модели":
     if uploaded_file:
         # Loading data
         df = pd.read_csv(uploaded_file)
-        st.dataframe(df.head())
+
+        # Выбор переменных с помощью флажков
+        selected_features = st.sidebar.multiselect(
+            "🔧 Отметьте переменные для отображения:",
+            df.columns.tolist(),
+            default=df.columns.tolist()
+        )
+        
+        st.dataframe(df[selected_features])
 
         if st.button("🚀 Обучить модель"):
             # GB Flag = "IsFraud" column, binary classification task
@@ -333,13 +341,6 @@ if page == "🔍 Проверка":
             df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
             df_original = df.copy()
 
-            # Выбор переменных с помощью флажков
-            selected_features = st.sidebar.multiselect(
-                "🔧 Отметьте переменные для отображения:",
-                df.columns.tolist(),
-                default=df.columns.tolist()
-            )
-
             # Align features (implement align_features if needed)
             df_aligned = align_features(df, feature_names)
             # Encode categorical columns
@@ -360,7 +361,7 @@ if page == "🔍 Проверка":
             st.subheader("📋 Предсказания")
             rows_to_display = st.slider(
                 "Количество отображаемых строк",
-                min_value=1,
+                min_value=0,
                 max_value=min(100, len(output_df)),
                 value=min(10, len(output_df)),
                 step=1
